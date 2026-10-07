@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OEE acumulado e projeção</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: coluna única de leitura (46rem). Resumo em três colunas, gráfico no estilo do painel (barras azuis, linhas laranja), regras de cálculo da projeção, detalhes técnicos recolhidos no fim. */
+:root {
+  --bg: #f3f6fa;
+  --surface: #ffffff;
+  --fg: #14202e;
+  --muted: #56667b;
+  --line: #d8e0ea;
+  --bar: #1a8fd8;
+  --acc: #c25400;
+  --on-acc: #ffffff;
+  --ok: #1d7a4d;
+  --bad: #b3261e;
+  --warn: #9a5700;
+  --code-bg: #eaeff6;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1520;
+    --surface: #16202d;
+    --fg: #e5ecf5;
+    --muted: #93a3b8;
+    --line: #28364a;
+    --bar: #4db3f0;
+    --acc: #ff9d42;
+    --on-acc: #1c1100;
+    --ok: #5fd09a;
+    --bad: #ff8a80;
+    --warn: #f0b45a;
+    --code-bg: #1d2a3b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1520;
+  --surface: #16202d;
+  --fg: #e5ecf5;
+  --muted: #93a3b8;
+  --line: #28364a;
+  --bar: #4db3f0;
+  --acc: #ff9d42;
+  --on-acc: #1c1100;
+  --ok: #5fd09a;
+  --bad: #ff8a80;
+  --warn: #f0b45a;
+  --code-bg: #1d2a3b;
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 400 1rem/1.65 var(--font-body);
+  padding-inline: 16px;
+  padding-block: 40px 72px;
+}
+.page { max-width: 46rem; margin-inline: auto; display: flex; flex-direction: column; gap: 3rem; }
+section, header { min-width: 0; }
+
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(2rem, 6vw, 2.75rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.5rem; font-weight: 600; }
+h3 { font-size: 1.125rem; font-weight: 600; }
+p { margin: 0; max-width: 65ch; }
+a { color: var(--bar); }
+
+.eyebrow {
+  font: 500 0.75rem/1.3 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.lead { font-size: 1.125rem; color: var(--fg); margin-top: 1rem; }
+.meta { margin-top: 1.25rem; display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; font: 400 0.8125rem/1.4 var(--font-mono); color: var(--muted); }
+
+.block { display: flex; flex-direction: column; gap: 1rem; }
+
+/* Resumo e definições */
+.summary { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr)); gap: 1.5rem; }
+.summary > div { border-top: 1px solid var(--fg); padding-top: 0.75rem; display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.summary dt { font: 500 0.75rem/1.2 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.summary dd { margin: 0; font-size: 0.97rem; }
+
+/* Figuras */
+figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 1rem 1rem 0.75rem; display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+figure svg { display: block; width: 100%; height: auto; max-width: 100%; }
+figcaption { font-size: 0.8125rem; color: var(--muted); }
+.g-grid { stroke: var(--line); stroke-width: 1; }
+.g-text { fill: var(--muted); font: 400 12px var(--font-mono); }
+.g-bar { fill: var(--bar); }
+.g-acc { fill: none; stroke: var(--acc); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.g-proj { fill: none; stroke: var(--acc); stroke-width: 2.5; stroke-dasharray: 6 4; }
+.g-dot { fill: var(--acc); }
+.g-chip { fill: var(--acc); }
+.g-chip-t { fill: var(--on-acc); font: 600 12px var(--font-mono); }
+
+.legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.9rem; }
+.legend li { display: grid; grid-template-columns: 3.25rem 1fr; gap: 0.9rem; align-items: start; }
+.legend svg { width: 3.25rem; height: 1.25rem; margin-top: 0.2rem; }
+.legend strong { font-weight: 600; }
+
+/* Tabela */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 36rem; font-size: 0.9rem; }
+th, td { text-align: left; vertical-align: top; padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--line); }
+tr:last-child td { border-bottom: 0; }
+th { font: 500 0.72rem/1.2 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+td:first-child { font-family: var(--font-mono); font-size: 0.8125rem; white-space: nowrap; }
+
+/* Regras */
+.rules { display: flex; flex-direction: column; gap: 1.5rem; }
+.rules > div { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.example { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; margin-top: 0.4rem; }
+.formula { font: 500 0.9rem/1.5 var(--font-mono); font-variant-numeric: tabular-nums; overflow-x: auto; padding-block: 0.15rem; }
+.example small { color: var(--muted); font-size: 0.8125rem; }
+
+/* Notas */
+.notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1.1rem; }
+.notes li { display: flex; flex-direction: column; gap: 0.15rem; padding-left: 1rem; border-left: 2px solid var(--line); }
+.notes strong { font-weight: 600; }
+.notes.warn li { border-left-color: var(--warn); }
+.notes.ok li { border-left-color: var(--ok); }
+
+/* Detalhes */
+details { border-top: 1px solid var(--line); padding-block: 0.9rem; }
+details:last-of-type { border-bottom: 1px solid var(--line); }
+summary { cursor: pointer; font-weight: 600; list-style-position: outside; padding-left: 0.25rem; }
+summary:focus-visible, button:focus-visible { outline: 2px solid var(--bar); outline-offset: 3px; border-radius: 3px; }
+details > :not(summary) { margin-top: 0.7rem; }
+.faq { display: flex; flex-direction: column; }
+
+.code-block { background: var(--code-bg); border-radius: 6px; overflow: hidden; min-width: 0; }
+.code-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.45rem 0.6rem 0.45rem 0.9rem; border-bottom: 1px solid var(--line); }
+.code-head span { font: 500 0.75rem/1 var(--font-mono); letter-spacing: 0.06em; color: var(--muted); }
+.code-head button { font: 500 0.75rem/1 var(--font-mono); background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 0.4rem 0.7rem; cursor: pointer; }
+.code-head button:hover { border-color: var(--bar); }
+pre { margin: 0; padding: 0.9rem; overflow-x: auto; font: 400 0.8125rem/1.55 var(--font-mono); }
+.tech { display: flex; flex-direction: column; gap: 1rem; }
+.tech ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.3rem; }
+
+footer { font: 400 0.8125rem/1.5 var(--font-mono); color: var(--muted); }
+
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <header>
+    <div class="eyebrow">Benex Beneficiamento Têxtil · Painel Visão Geral de Máquinas</div>
+    <h1>OEE % acumulado e projeção do mês</h1>
+    <p class="lead">Este gráfico mostra onde o OEE do mês deve fechar se os dias que faltam seguirem no nível atual. Esta página explica como a projeção é calculada, como ler a linha pontilhada e quais cuidados ter.</p>
+    <div class="meta"><span>Atualizado em 06/10/2026 às 14:22</span><span>Base: OP_ITENS E900EOQ</span><span>Período: mês corrente</span></div>
+  </header>
+
+  <section class="block" aria-labelledby="resumo">
+    <h2 id="resumo">Resumo</h2>
+    <dl class="summary">
+      <div><dt>O que mostra</dt><dd>O OEE % de cada dia, o OEE acumulado do mês e uma projeção até o último dia do mês.</dd></div>
+      <div><dt>Para que serve</dt><dd>Perceber cedo se o mês vai fechar abaixo ou acima do esperado, ainda com tempo de agir.</dd></div>
+      <div><dt>Como usar</dt><dd>Compare o fim da linha pontilhada com o acumulado. Use os filtros de estágio ou máquina para achar onde está o desvio.</dd></div>
+    </dl>
+  </section>
+
+  <section class="block" aria-labelledby="leitura">
+    <h2 id="leitura">Como ler o gráfico</h2>
+    <figure>
+      <svg id="oee-chart" viewBox="0 0 480 300" role="img" aria-label="Gráfico combinado de outubro. Barras azuis mostram o OEE de cada dia, de 1 a 6. Uma linha laranja contínua mostra o acumulado, de 80,2% no dia 1 a 70,0% no dia 6. Uma linha laranja pontilhada projeta o acumulado de 70,0% no dia 6 a 71,0% no dia 31."></svg>
+      <figcaption>Ilustração com os dados do painel de 06/10/2026 às 14:22. As barras e os rótulos são os valores do painel. Os pontos intermediários da linha de acumulado são aproximados.</figcaption>
+    </figure>
+    <ul class="legend">
+      <li>
+        <svg viewBox="0 0 52 20" aria-hidden="true"><rect x="18" y="2" width="16" height="16" class="g-bar"/></svg>
+        <span><strong>Barras azuis: OEE % de cada dia.</strong> Mostram a oscilação diária, dia a dia.</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 52 20" aria-hidden="true"><line x1="2" y1="10" x2="50" y2="10" class="g-acc"/></svg>
+        <span><strong>Linha laranja contínua: Acumulado %.</strong> OEE do mês, do dia 1 até cada data, até o último dia com produção.</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 52 20" aria-hidden="true"><line x1="2" y1="10" x2="50" y2="10" class="g-proj"/></svg>
+        <span><strong>Linha laranja pontilhada: Projeção %.</strong> Supõe que os dias restantes repitam a média dos dias do mês.</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 52 20" aria-hidden="true"><rect x="3" y="3" width="46" height="14" rx="3" class="g-chip"/></svg>
+        <span><strong>Rótulos laranja: só dois pontos.</strong> O último dia com produção e o último dia do mês.</span>
+      </li>
+    </ul>
+    <p>Cada ponto da linha é o OEE do mês até aquela data. O OEE de um dia isolado é a barra.</p>
+  </section>
+
+  <section class="block" aria-labelledby="medidas">
+    <h2 id="medidas">O que cada medida entrega</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Medida</th><th>Pergunta que responde</th><th>Onde aparece</th></tr></thead>
+        <tbody>
+          <tr><td>OEE %</td><td>Como foi o dia?</td><td>Barras azuis</td></tr>
+          <tr><td>OEE_acumulado</td><td>Como está o mês até agora?</td><td>Linha contínua (Acumulado %)</td></tr>
+          <tr><td>OEE_acumulado_futuro</td><td>Para onde o mês caminha?</td><td>Linha pontilhada (Projeção %)</td></tr>
+          <tr><td>OEE_sem_contexto</td><td>Qual é a média dos dias do mês?</td><td>Não aparece. Serve de base da projeção</td></tr>
+          <tr><td>Data_ultima_producao</td><td>Até que dia existem dados reais?</td><td>Não aparece. Define onde a linha contínua termina</td></tr>
+          <tr><td>Rotulo_OEE_Projecao</td><td>Em quais dias mostramos o número?</td><td>Rótulos laranja no último dia com produção e no último dia do mês</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="block" aria-labelledby="calculo">
+    <h2 id="calculo">Como o cálculo funciona</h2>
+    <div class="rules">
+      <div>
+        <h3>O acumulado recalcula o OEE, não soma os dias</h3>
+        <p>OEE é um percentual. Somar percentuais de dias diferentes daria valores absurdos, como 1.225%. A medida recalcula o OEE sobre todo o período, do dia 1 até a data. O resultado fica na mesma faixa dos OEEs diários.</p>
+      </div>
+      <div>
+        <h3>A linha contínua termina no último dia com produção</h3>
+        <p>O corte usa a última data de produção registrada até hoje. Datas futuras que já existem na base, como ordens programadas, não entram como realizado.</p>
+      </div>
+      <div>
+        <h3>A projeção usa a média dos dias com produção</h3>
+        <p>Para os dias que faltam, o sistema assume a média simples do OEE dos dias do mês que tiveram produção. Dias parados ou sem lançamento ficam fora dessa média.</p>
+        <div class="example">
+          <div class="eyebrow">Exemplo de cálculo</div>
+          <div class="formula">(80,2 + 57,1 + 87,9 + 71,4 + 79,7 + 50,9) ÷ 6 = 71,2%</div>
+          <small>Média dos seis dias com produção em 06/10/2026, vista nas barras do painel.</small>
+        </div>
+      </div>
+      <div>
+        <h3>A projeção é uma média entre o realizado e a média dos dias</h3>
+        <p>Cada dia já realizado entra com o acumulado real. Cada dia restante entra com a média dos dias. Quanto mais o mês avança, mais peso tem o realizado e menos a projeção se move.</p>
+        <div class="example">
+          <div class="eyebrow">Exemplo de cálculo</div>
+          <div class="formula">(70,0% × 6 dias + 71,2% × 25 dias) ÷ 31 dias = 71,0%</div>
+          <small>Acumulado de 70,0% no dia 6 e média dos dias de 71,2%. Resultado: projeção para o dia 31.</small>
+        </div>
+      </div>
+      <div>
+        <h3>Tudo respeita os filtros da página</h3>
+        <p>Estágio, máquina e Ano, Mês, Dia mudam as barras, o acumulado e a projeção. No dia 1 de cada mês o cálculo recomeça do zero.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" aria-labelledby="normal">
+    <h2 id="normal">O que é normal ver</h2>
+    <ul class="notes ok">
+      <li><strong>Queda do acumulado logo no começo do mês.</strong><span>No dia 1 o acumulado é igual ao OEE do dia (80,2%). No dia 2 ele cai para perto de 68%, porque o dia 2 teve 57,1%. Com poucos dias no mês, cada dia pesa muito.</span></li>
+      <li><strong>Barras que oscilam bastante.</strong><span>Em outubro os dias variaram de 50,9% a 87,9%. A linha de acumulado suaviza essa oscilação, e por isso é ela que indica a tendência do mês.</span></li>
+      <li><strong>Projeção quase reta.</strong><span>A projeção mistura 6 dias reais com 25 dias estimados. Ela anda pouco de um dia para o outro. Em 06/10 vai de 70,0% a 71,0%.</span></li>
+    </ul>
+  </section>
+
+  <section class="block" aria-labelledby="cuidados">
+    <h2 id="cuidados">Cuidados ao usar</h2>
+    <ul class="notes warn">
+      <li><strong>A projeção não é meta nem previsão de produção.</strong><span>Ela mostra onde o mês fecha se os dias restantes repetirem a média dos dias. Plano de melhoria ou parada programada muda o resultado real.</span></li>
+      <li><strong>Acumulado e média dos dias podem ser diferentes.</strong><span>Em 06/10 o acumulado é 70,0% e a média dos dias é 71,2%. No acumulado, os dias com mais produção pesam mais. A projeção parte do acumulado e caminha para a média dos dias.</span></li>
+      <li><strong>Todos os dias futuros pesam igual.</strong><span>Fins de semana, feriados e paradas programadas distorcem a projeção de forma leve.</span></li>
+      <li><strong>O dia de hoje entra como realizado.</strong><span>Se o apontamento do dia ainda estiver incompleto, o valor atual pode mudar ao longo do dia.</span></li>
+      <li><strong>Atraso de apontamento muda a leitura.</strong><span>Antes de concluir algo, confirme com quem faz o apontamento se a produção dos últimos dias já foi lançada.</span></li>
+    </ul>
+  </section>
+
+  <section class="block" aria-labelledby="faq">
+    <h2 id="faq">Perguntas frequentes</h2>
+    <div class="faq">
+      <details>
+        <summary>Por que não somamos o OEE dos dias?</summary>
+        <p>Porque OEE é percentual. A soma de seis dias de cerca de 70% daria 420%. O acumulado recalcula o OEE sobre o período inteiro e fica na faixa dos valores diários.</p>
+      </details>
+      <details>
+        <summary>Por que a projeção termina em 71,0% se o acumulado é 70,0%?</summary>
+        <p>A projeção caminha do acumulado (70,0%) para a média simples dos dias (71,2%). Com 25 dias ainda por vir, ela chega perto da média, mas mantém o peso dos 6 dias já realizados.</p>
+      </details>
+      <details>
+        <summary>A linha pontilhada muda de um dia para o outro?</summary>
+        <p>Sim. A cada atualização dos dados, o acumulado e a média dos dias mudam, e a projeção é recalculada.</p>
+      </details>
+      <details>
+        <summary>Posso ver só um estágio ou uma máquina?</summary>
+        <p>Sim. Use os filtros Estágio e Máquina (Abridor, Calandra Algod., Calandra Bril., Rama, Secador e suas máquinas). Barras, acumulado e projeção se ajustam ao filtro.</p>
+      </details>
+      <details>
+        <summary>O que acontece na virada do mês?</summary>
+        <p>O acumulado recomeça no dia 1. Nos primeiros dias do mês, espere oscilações maiores.</p>
+      </details>
+      <details>
+        <summary>Existe versão acumulada do ano?</summary>
+        <p>Hoje o gráfico é mensal. Uma versão anual é possível e deve ser pedida ao time de BI.</p>
+      </details>
+    </div>
+  </section>
+
+  <section class="block" aria-labelledby="bi">
+    <h2 id="bi">Para o time de BI</h2>
+    <details>
+      <summary>Fórmulas DAX e configuração do visual</summary>
+      <div class="tech">
+        <ul>
+          <li>Tabela fato: <code>'OP_ITENS E900EOQ'</code>, coluna <code>[DATA]</code>. Calendário: <code>dCalendarprod</code>, com a coluna <code>Date</code>.</li>
+          <li>Visual combinado: eixo X <code>Date</code>, colunas <code>[OEE %]</code>, linha <code>OEE_acumulado</code> (Acumulado %) e linha <code>OEE_acumulado_futuro</code> (Projeção %). Os rótulos laranja vêm da medida <code>Rotulo_OEE_Projecao</code>.</li>
+          <li><code>OEE_sem_contexto</code> usa <code>AVERAGEX</code>, então é média simples dos OEEs diários. O <code>TOTALMTD</code> recalcula o <code>[OEE %]</code> no período, ponderado pela produção. Por isso os dois valores diferem.</li>
+          <li>Se o apontamento atrasar, troque <code>TODAY()</code> por <code>TODAY() - 1</code> em <code>Data_ultima_producao</code>.</li>
+          <li>A variável <code>possuiProducaoNoMes</code> em <code>OEE_acumulado_futuro</code> não é usada no cálculo e pode ser removida.</li>
+        </ul>
+
+        <div class="code-block">
+          <div class="code-head"><span>Data_ultima_producao</span><button type="button" data-copy>Copiar</button></div>
+<pre><code>Data_ultima_producao =
+CALCULATE(                                  // Altera o contexto de avaliação do cálculo
+    MAX('OP_ITENS E900EOQ'[DATA]),          // Busca a maior data (mais recente) cadastrada na tabela de produção
+    ALL(dCalendarprod),                     // Remove filtros da tabela de calendário para analisar todo o histórico
+    'OP_ITENS E900EOQ'[DATA] &lt;= TODAY()     // Filtra para considerar apenas registros até o dia de hoje (evita dados futuros incorretos)
+)</code></pre>
+        </div>
+
+        <div class="code-block">
+          <div class="code-head"><span>OEE_acumulado</span><button type="button" data-copy>Copiar</button></div>
+<pre><code>OEE_acumulado =
+VAR dt = [Data_ultima_producao]             // Guarda a data da última produção em uma variável chamada 'dt'
+RETURN                                      // Inicia o retorno do resultado
+IF(                                         // Inicia uma verificação condicional
+    MAX(dCalendarprod[Date]) &lt;= dt,         // Verifica se a data exibida no gráfico é menor ou igual à última data com produção
+    TOTALMTD(                               // Calcula o acumulado do início do mês até a data atual (Month-To-Date)
+        [OEE %],                            // A medida do OEE percentual diário que será acumulada
+        dCalendarprod[Date]                 // A coluna de datas do calendário usada para acumular o mês
+    )                                       // Fecha a função TOTALMTD
+)                                           // Fecha a função IF (se a data for futura, retorna em branco)</code></pre>
+        </div>
+
+        <div class="code-block">
+          <div class="code-head"><span>OEE_acumulado_futuro</span><button type="button" data-copy>Copiar</button></div>
+<pre><code>OEE_acumulado_futuro =
+VAR dt = [Data_ultima_producao]                                     // Guarda a data da última produção na variável 'dt'
+VAR dtAtual = MAX(dCalendarprod[Date])                              // Captura a data específica que o gráfico está desenhando no momento
+
+// Verifica se a máquina realmente produziu dentro do mês visível
+VAR possuiProducaoNoMes = NOT ISBLANK([OEE %]) || NOT ISBLANK([OEE_acumulado]) // Testa se há dados no mês (não utilizada diretamente no RETURN)
+
+RETURN                                                              // Inicia o bloco de cálculo final
+IF(                                                                 // Verifica se pode calcular a projeção
+    NOT ISBLANK(dt) &amp;&amp; dtAtual &gt;= dt,                               // Calcula APENAS se existir data de produção E se a data for igual ou futura à última produção
+    VAR diasFuturos = DATEDIFF(dt, dtAtual, DAY)                    // Conta quantos dias se passaram entre a última produção e a data futura
+    VAR diasReais = DAY(dt)                                         // Pega o número do dia da última produção (ex: dia 5 = 5 dias reais passados)
+    VAR oeeReal = CALCULATE([OEE_acumulado], dCalendarprod[Date] = dt) // Resgata o valor exato do OEE acumulado real até o último dia produzido
+
+    RETURN                                                          // Inicia o retorno da fórmula matemática
+    DIVIDE(                                                         // Faz uma divisão segura para evitar erros por zero
+        oeeReal * diasReais + [OEE_sem_contexto] * diasFuturos,     // Numerador: (OEE real × dias reais) + (média diária × dias futuros)
+        diasReais + diasFuturos                                     // Denominador: soma total de dias (reais + futuros) para a média ponderada
+    )                                                               // Fecha a função DIVIDE
+)                                                                   // Fecha a função IF</code></pre>
+        </div>
+
+        <div class="code-block">
+          <div class="code-head"><span>OEE_sem_contexto</span><button type="button" data-copy>Copiar</button></div>
+<pre><code>OEE_sem_contexto =
+VAR dt = [Data_ultima_producao]             // Armazena a data da última produção na variável 'dt'
+VAR iniMes = DATE(YEAR(dt), MONTH(dt), 1)   // Identifica qual foi o dia 01 do mês daquela última produção
+
+RETURN                                      // Inicia o retorno do cálculo
+CALCULATE(                                  // Modifica os filtros para calcular a média
+    AVERAGEX(                               // Percorre a tabela dia por dia para tirar a média
+        VALUES(dCalendarprod[Date]),        // Pega a lista de dias únicos do calendário
+        [OEE %]                             // Calcula a média em cima do OEE diário
+    ),                                      // Fecha a função AVERAGEX
+    FILTER(                                 // Aplica um filtro personalizado
+        ALL(dCalendarprod[Date]),           // Limpa filtros de data para olhar todo o intervalo do mês
+        dCalendarprod[Date] &gt;= iniMes       // Considera dias a partir do dia 1º do mês
+            &amp;&amp; dCalendarprod[Date] &lt;= dt    // Até o dia da última produção registrada
+            &amp;&amp; NOT ISBLANK([OEE %])         // Ignora dias em que não houve produção (dias em branco/parados)
+    )                                       // Fecha a função FILTER
+)                                           // Fecha a função CALCULATE</code></pre>
+        </div>
+
+        <div class="code-block">
+          <div class="code-head"><span>Rotulo_OEE_Projecao</span><button type="button" data-copy>Copiar</button></div>
+<pre><code>Rotulo_OEE_Projecao =
+VAR dt = TRUNC([Data_ultima_producao])      // Pega a data da última produção e remove horas/minutos para garantir data pura
+VAR dtAtual = MAX(dCalendarprod[Date])      // Identifica o dia atual do eixo X no gráfico
+
+VAR dtFimMes = EOMONTH(dtAtual, 0)          // Descobre qual é o último dia do mês atual (ex: dia 30 ou 31)
+
+RETURN                                      // Inicia o retorno
+IF(                                         // Inicia a condição de exibição
+    dtAtual = dt || dtAtual = dtFimMes,     // Testa se o dia no gráfico é O DIA DA ÚLTIMA PRODUÇÃO ou O ÚLTIMO DIA DO MÊS
+    [OEE_acumulado_futuro]                  // Se for um desses dois dias, mostra o número da projeção
+)                                           // Fecha a função IF (retorna vazio nos outros dias)</code></pre>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <footer>Atualizado em 06/10/2026 às 14:22. Dúvidas sobre números ou filtros: fale com o time de BI.</footer>
+</div>
+
+<script>
+(function () {
+  var svg = document.getElementById('oee-chart');
+  if (svg) {
+    var NS = 'http://www.w3.org/2000/svg';
+    var W = 480, H = 300, m = { l: 40, r: 14, t: 26, b: 40 };
+    var dMax = 31, yMax = 100;
+    var slot = (W - m.l - m.r) / dMax;
+    var x = function (d) { return m.l + (d - 0.5) * slot; };
+    var y = function (v) { return m.t + (yMax - v) / yMax * (H - m.t - m.b); };
+    var fmt = function (v) { return v.toFixed(1).replace('.', ',') + '%'; };
+    var el = function (name, attrs, text) {
+      var n = document.createElementNS(NS, name);
+      for (var k in attrs) n.setAttribute(k, attrs[k]);
+      if (text != null) n.textContent = text;
+      svg.appendChild(n);
+      return n;
+    };
+    var path = function (pts) {
+      return pts.map(function (p, i) { return (i ? 'L' : 'M') + x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1); }).join(' ');
+    };
+
+    var bars = [80.2, 57.1, 87.9, 71.4, 79.7, 50.9];
+    var acc = [80.2, 68.1, 72.5, 72.8, 72.8, 70.0];
+    var days = bars.length, last = acc[days - 1], avg = 71.2;
+    var proj = [];
+    for (var d = days; d <= dMax; d++) {
+      proj.push([d, d === days ? last : (last * days + avg * (d - days)) / d]);
+    }
+    var end = proj[proj.length - 1][1];
+
+    [0, 25, 50, 75, 100].forEach(function (v) {
+      el('line', { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), 'class': 'g-grid' });
+      el('text', { x: m.l - 8, y: y(v) + 4, 'text-anchor': 'end', 'class': 'g-text' }, v + '%');
+    });
+    [1, 6, 11, 16, 21, 26, 31].forEach(function (d) {
+      el('text', { x: x(d), y: H - m.b + 18, 'text-anchor': 'middle', 'class': 'g-text' }, String(d));
+    });
+    el('text', { x: (m.l + W - m.r) / 2, y: H - 6, 'text-anchor': 'middle', 'class': 'g-text' }, 'Dia do mês (outubro)');
+
+    var bw = 9;
+    bars.forEach(function (v, i) {
+      el('rect', { x: x(i + 1) - bw / 2, y: y(v), width: bw, height: y(0) - y(v), 'class': 'g-bar' });
+    });
+
+    el('path', { d: path(proj), 'class': 'g-proj' });
+    el('path', { d: path(acc.map(function (v, i) { return [i + 1, v]; })), 'class': 'g-acc' });
+    el('circle', { cx: x(days), cy: y(last), r: 3.5, 'class': 'g-dot' });
+
+    var chip = function (cx, top, text, anchor) {
+      var w = 46, h = 18, left = anchor === 'end' ? cx - w : cx;
+      el('rect', { x: left, y: top, width: w, height: h, rx: 3, 'class': 'g-chip' });
+      el('text', { x: left + w / 2, y: top + 13, 'text-anchor': 'middle', 'class': 'g-chip-t' }, text);
+    };
+    chip(x(days) + 8, y(last) + 8, fmt(last), 'start');
+    chip(W - m.r, y(end) - 28, fmt(end), 'end');
+  }
+
+  function selectText(node) {
+    var r = document.createRange();
+    r.selectNodeContents(node);
+    var s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
+  }
+  document.querySelectorAll('[data-copy]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var code = btn.closest('.code-block').querySelector('code');
+      var done = function () {
+        btn.textContent = 'Copiado';
+        setTimeout(function () { btn.textContent = 'Copiar'; }, 1600);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code.textContent).then(done, function () { selectText(code); });
+      } else {
+        selectText(code);
+      }
+    });
+  });
+})();
+</script>
+
+</body>
+</html>
